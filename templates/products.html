@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Eco-Friendly Products</h1>
+
+    <form method="GET" action="{{ url_for('products') }}">
+        <input type="text" name="q" placeholder="Search for eco-friendly products" value="{{ query or '' }}">
+        <button type="submit">Search</button>
+    </form>
+
+    {% if products %}
+        <ul>
+            {% for product in products %}
+                <li>
+                    <h2>{{ product.title }}</h2>
+                    <p>Price: ${{ product.price }}</p>
+                    {% if product.thumbnail %}
+                        <img src="{{ product.thumbnail }}" alt="{{ product.title }}" width="100">
+                    {% endif %}
+                    <p><a href="{{ product.permalink }}" target="_blank">View on Mercado Libre</a></p>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No eco-friendly products found for your search.</p>
+        {% if not session.get('access_token') %}
+            <p><a href="{{ url_for('login') }}">Please log in to search for products.</a></p>
+        {% endif %}
+    {% endif %}
+{% endblock %}
