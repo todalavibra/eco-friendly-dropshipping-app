@@ -25,9 +25,16 @@ REDIRECT_URI = os.environ.get("MELI_REDIRECT_URI")
 # --- Helper Functions ---
 
 def get_access_token():
-    """
-    Retrieves the access token from the session, refreshing it if necessary.
-    Returns the access token or None if it can't be obtained.
+    """Retrieves the access token from the session, refreshing it if necessary.
+
+    This function checks if a valid, non-expired access token is present in the
+    user's session. If the token is expired or missing, it attempts to use the
+    refresh token to obtain a new one from the Mercado Libre API.
+
+    Returns:
+        str: The access token if available and valid.
+        None: If the access token cannot be retrieved or refreshed, or if no
+              refresh token is available.
     """
     # Check if token exists and is not expired (with a 60-second buffer)
     if ('access_token' in session and 'expires_at' in session
@@ -68,9 +75,21 @@ def get_access_token():
 
 
 def search_eco_products(query, access_token, site_id="MLA"):
-    """
-    Searches for products on Mercado Libre based on a query.
-    Returns a tuple (data, error).
+    """Searches for products on Mercado Libre using the provided query.
+
+    Args:
+        query (str): The search term to look for (e.g., "eco-friendly").
+        access_token (str): The authenticated user's access token for the API.
+        site_id (str, optional): The Mercado Libre site ID. Defaults to "MLA"
+                                 (Argentina).
+
+    Returns:
+        tuple: A tuple containing:
+            - dict: The JSON response from the API with search results.
+            - None: If the request was successful.
+        tuple: A tuple containing:
+            - None: If an error occurred.
+            - str: The error message.
     """
     search_url = f"https://api.mercadolibre.com/sites/{site_id}/search"
     headers = {
@@ -91,14 +110,27 @@ def search_eco_products(query, access_token, site_id="MLA"):
 
 @app.route("/")
 def home():
-    """Renders the home page."""
+    """Renders the home page.
+
+    Returns:
+        str: The rendered HTML of the home page (index.html).
+    """
     return render_template('index.html')
 
 
 @app.route("/products")
 def products():
-    """
-    Displays eco-friendly products after attempting authenticated search.
+    """Displays a list of eco-friendly products from Mercado Libre.
+
+    This route requires the user to be authenticated. It retrieves an access
+    token, searches for products with a given query (or a default), and
+    renders the results on the products page. If not authenticated, it
+    redirects to the login page.
+
+    Returns:
+        str: The rendered HTML of the products page with the product list.
+        werkzeug.wrappers.response.Response: A redirect to the login page if
+                                             the user is not authenticated.
     """
     access_token = get_access_token()
     if not access_token:
@@ -119,7 +151,16 @@ def products():
 
 @app.route("/login")
 def login():
-    """Redirects the user to the Mercado Libre authorization page."""
+    """Redirects the user to the Mercado Libre authorization page.
+
+    If the necessary API credentials are not configured on the server, this
+    route will flash an error message and render the home page instead.
+
+    Returns:
+        werkzeug.wrappers.response.Response: A redirect to the Mercado Libre
+                                             authorization URL.
+        str: The rendered HTML of the home page if credentials are not set.
+    """
     if not all([CLIENT_ID, CLIENT_SECRET, REDIRECT_URI]):
         flash("API credentials are not configured on the server.", "danger")
         return render_template('index.html')
@@ -131,9 +172,17 @@ def login():
 
 @app.route("/callback")
 def callback():
-    """
-    Handles the redirect from Mercado Libre and exchanges the authorization
-    code for an access token.
+    """Handles the OAuth2 callback from Mercado Libre.
+
+    After the user authorizes the application, Mercado Libre redirects them
+    back to this endpoint with an authorization code. This function exchanges
+    that code for an access token and a refresh token, storing them in the
+    user's session.
+
+    Returns:
+        werkzeug.wrappers.response.Response: A redirect to the products page
+                                             on success, or back to the home
+                                             page on failure.
     """
     code = request.args.get("code")
     if not code:
