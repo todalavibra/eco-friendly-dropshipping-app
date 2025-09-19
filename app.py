@@ -65,8 +65,10 @@ def get_access_token():
 
         except requests.exceptions.RequestException as e:
             print(f"Error during token refresh: {e}")
-            # Clear session and notify user if refresh fails
-            session.clear()
+            # Clear only auth-related keys from session, preserving other data
+            session.pop('access_token', None)
+            session.pop('refresh_token', None)
+            session.pop('expires_at', None)
             flash("Your session has expired. Please log in again.", "warning")
             return None
 
