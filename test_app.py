@@ -39,6 +39,29 @@ def test_get_access_token_refresh_failure_preserves_session_data(client, request
         assert 'refresh_token' not in sess
         assert 'expires_at' not in sess
 
+
+def test_get_access_token_refresh_missing_token_in_response(client, requests_mock):
+    """
+    Tests that a successful (200 OK) but invalid token refresh response
+    (e.g., missing 'access_token') is handled gracefully.
+    """
+    token_url = "https://api.mercadolibre.com/oauth/token"
+    # Simulate a 200 OK response that is missing the access_token field.
+    requests_mock.post(token_url, status_code=200, json={"scope": "read"})
+
+    with app.test_request_context():
+        session['refresh_token'] = 'valid_refresh_token'
+        session['expires_at'] = time.time() - 3600 # Expired
+
+        # This call should not raise a KeyError.
+        token = get_access_token()
+
+        assert token is None
+        # The session should be cleared of auth data.
+        assert 'access_token' not in session
+        assert 'refresh_token' not in session
+        assert 'expires_at' not in session
+
 def test_get_access_token_valid_in_session(client):
     """
     Tests that a valid, non-expired token is correctly retrieved from the session.
