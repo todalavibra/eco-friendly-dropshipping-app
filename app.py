@@ -51,9 +51,20 @@ def get_access_token():
             response.raise_for_status()
             token_data = response.json()
 
-            session['access_token'] = token_data['access_token']
+            access_token = token_data.get("access_token")
+            expires_in = token_data.get("expires_in")
+
+            if not access_token or not expires_in:
+                print(f"Invalid token response received: {token_data}")
+                session.pop('access_token', None)
+                session.pop('refresh_token', None)
+                session.pop('expires_at', None)
+                flash("Your session has expired. Please log in again.", "warning")
+                return None
+
+            session['access_token'] = access_token
             session['refresh_token'] = token_data.get('refresh_token', session['refresh_token'])
-            session['expires_at'] = time.time() + token_data['expires_in'] - 60
+            session['expires_at'] = time.time() + expires_in - 60
 
             print("Token refreshed successfully.")
             return session['access_token']
