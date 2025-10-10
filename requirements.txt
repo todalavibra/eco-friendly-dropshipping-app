@@ -1,3 +1,5 @@
 flask
 flask-ngrok
 requests
+pytest
+requests-mock

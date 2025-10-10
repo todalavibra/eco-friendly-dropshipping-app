@@ -81,7 +81,18 @@ def get_access_token():
 
 
 def search_eco_products(query, access_token, site_id="MLA"):
-    """Searches for products on Mercado Libre using the provided query."""
+    """Searches for products on Mercado Libre.
+
+    Args:
+        query (str): The search term to look for.
+        access_token (str): The user's OAuth2 access token for authentication.
+        site_id (str, optional): The Mercado Libre site ID. Defaults to "MLA" (Argentina).
+
+    Returns:
+        tuple: A tuple containing the JSON response from the API as a dictionary
+               and None on success, or (None, str) on failure, where the second
+               element is an error message.
+    """
     search_url = f"https://api.mercadolibre.com/sites/{site_id}/search"
     headers = {
         "Authorization": f"Bearer {access_token}"
@@ -101,13 +112,32 @@ def search_eco_products(query, access_token, site_id="MLA"):
 
 @app.route("/")
 def home():
-    """Renders the home page."""
+    """Renders the application's home page.
+
+    This route displays the main landing page of the application, which
+    typically contains a welcome message and basic navigation.
+
+    Returns:
+        str: The rendered HTML content for the home page from the 'index.html' template.
+    """
     return render_template('index.html')
 
 
 @app.route("/products")
 def products():
-    """Displays a list of eco-friendly products from Mercado Libre."""
+    """Displays a list of products based on a search query.
+
+    This route requires the user to be authenticated. It retrieves the user's
+    access token and uses it to search for products on Mercado Libre. The search
+    query can be passed as a URL parameter 'q'. If no query is provided, it
+    defaults to "eco-friendly". The results are then rendered on the products page.
+
+    Returns:
+        werkzeug.wrappers.Response: A redirect to the login page if the user is
+                                    not authenticated, or the rendered HTML of the
+                                    'products.html' template with the list of
+                                    products.
+    """
     access_token = get_access_token()
     if not access_token:
         flash("You need to be logged in to view products.", "warning")
@@ -127,7 +157,17 @@ def products():
 
 @app.route("/login")
 def login():
-    """Redirects the user to the Mercado Libre authorization page."""
+    """Initiates the OAuth2 login process.
+
+    Redirects the user to the Mercado Libre authorization page to grant
+    permission to the application. It constructs the authorization URL with the
+    app's client ID and redirect URI. If credentials are not configured,
+    it flashes an error and shows the home page.
+
+    Returns:
+        werkzeug.wrappers.Response: A redirect to the Mercado Libre auth URL, or
+                                    renders the home page with an error flash.
+    """
     # Read credentials at time of use
     client_id = os.environ.get("MELI_CLIENT_ID")
     client_secret = os.environ.get("MELI_CLIENT_SECRET")
@@ -144,7 +184,18 @@ def login():
 
 @app.route("/callback")
 def callback():
-    """Handles the OAuth2 callback from Mercado Libre."""
+    """Handles the OAuth2 callback from Mercado Libre after user authorization.
+
+    This route is called by Mercado Libre after the user has authorized the
+    application. It receives an authorization code, which it exchanges for an
+    access token and a refresh token. These tokens are then stored in the user's
+    session.
+
+    Returns:
+        werkzeug.wrappers.Response: A redirect to the products page on successful
+                                    authentication, or a redirect to the home page
+                                    if an error occurs.
+    """
     code = request.args.get("code")
     if not code:
         flash("Authorization code not received.", "danger")

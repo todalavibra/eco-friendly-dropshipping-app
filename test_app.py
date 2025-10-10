@@ -6,6 +6,15 @@ from app import app, get_access_token, search_eco_products
 
 @pytest.fixture
 def client():
+    """A test client for the Flask application.
+
+    This fixture sets up the application for testing by enabling the 'TESTING'
+    flag, setting a test-specific secret key, and providing a test client to
+    make requests to the application's endpoints.
+
+    Yields:
+        FlaskClient: A test client instance for the application.
+    """
     app.config['TESTING'] = True
     app.config['SECRET_KEY'] = 'test-secret-key'
     # While the app uses env vars, setting this in config is a good practice for tests
@@ -18,7 +27,9 @@ def client():
 def test_get_access_token_refresh_failure_preserves_session_data(client, requests_mock):
     """
     Tests that a failed token refresh only clears authentication session
-    variables, preserving other session data.
+    variables, preserving other session data. This ensures that a user's
+    unrelated session information (e.g., a shopping cart) is not lost during
+    a failed re-authentication attempt.
     """
     token_url = "https://api.mercadolibre.com/oauth/token"
     requests_mock.post(token_url, status_code=400, json={"error": "invalid_grant"})
@@ -43,7 +54,9 @@ def test_get_access_token_refresh_failure_preserves_session_data(client, request
 def test_get_access_token_refresh_missing_token_in_response(client, requests_mock):
     """
     Tests that a successful (200 OK) but invalid token refresh response
-    (e.g., missing 'access_token') is handled gracefully.
+    (e.g., missing 'access_token') is handled gracefully. The function should
+    not raise an exception and should clear the expired authentication data
+    from the session.
     """
     token_url = "https://api.mercadolibre.com/oauth/token"
     # Simulate a 200 OK response that is missing the access_token field.
@@ -64,7 +77,8 @@ def test_get_access_token_refresh_missing_token_in_response(client, requests_moc
 
 def test_get_access_token_valid_in_session(client):
     """
-    Tests that a valid, non-expired token is correctly retrieved from the session.
+    Tests that a valid, non-expired token is correctly retrieved from the session
+    without needing to make an external API call.
     """
     with app.test_request_context():
         session['access_token'] = 'valid_token'
@@ -74,7 +88,8 @@ def test_get_access_token_valid_in_session(client):
 
 def test_get_access_token_no_token_in_session(client):
     """
-    Tests that get_access_token returns None when no token is in the session.
+    Tests that get_access_token returns None when no token information is
+    present in the session, ensuring it doesn't error on a clean session.
     """
     with app.test_request_context():
         # Session is empty by default in a new request context
@@ -83,7 +98,8 @@ def test_get_access_token_no_token_in_session(client):
 
 def test_search_eco_products_success(requests_mock):
     """
-    Tests a successful product search.
+    Tests a successful product search, ensuring that the function correctly
+    parses the JSON response from the Mercado Libre API and returns it.
     """
     search_url = "https://api.mercadolibre.com/sites/MLA/search"
     mock_response = {"results": [{"id": "MLA123", "title": "Eco-Friendly Product"}]}
@@ -95,7 +111,8 @@ def test_search_eco_products_success(requests_mock):
 
 def test_search_eco_products_api_error(requests_mock):
     """
-    Tests the function's error handling when the API call fails.
+    Tests the function's error handling when the Mercado Libre API call fails.
+    It should return None for the results and a descriptive error message.
     """
     search_url = "https://api.mercadolibre.com/sites/MLA/search"
     requests_mock.get(search_url, status_code=500, reason="Internal Server Error")
@@ -108,7 +125,7 @@ def test_search_eco_products_api_error(requests_mock):
 
 def test_home_route(client):
     """
-    Tests that the home page loads correctly.
+    Tests that the home page ('/') loads correctly and returns a 200 OK status.
     """
     response = client.get('/')
     assert response.status_code == 200
@@ -116,7 +133,8 @@ def test_home_route(client):
 
 def test_products_route_unauthenticated(client):
     """
-    Tests that the /products route redirects to login when not authenticated.
+    Tests that the /products route correctly redirects to the login page
+    when the user is not authenticated.
     """
     response = client.get('/products')
     assert response.status_code == 302
@@ -124,7 +142,8 @@ def test_products_route_unauthenticated(client):
 
 def test_products_route_authenticated_success(client, requests_mock):
     """
-    Tests that the /products route displays products when authenticated.
+    Tests that the /products route displays products correctly when the user
+    is authenticated. It mocks the API call to return a sample product list.
     """
     search_url = "https://api.mercadolibre.com/sites/MLA/search"
     mock_response = {"results": [{"id": "MLA123", "title": "Green Bottle", "price": 150, "thumbnail": "http://example.com/img.jpg"}]}
@@ -141,7 +160,8 @@ def test_products_route_authenticated_success(client, requests_mock):
 
 def test_products_route_api_error(client, requests_mock):
     """
-    Tests the /products route's error handling.
+    Tests that the /products route handles an API error gracefully by
+    displaying an error message to the user on the page.
     """
     search_url = "https://api.mercadolibre.com/sites/MLA/search"
     requests_mock.get(search_url, status_code=500)
@@ -156,7 +176,8 @@ def test_products_route_api_error(client, requests_mock):
 
 def test_login_route_with_credentials(client, monkeypatch):
     """
-    Tests that the login route redirects to Mercado Libre.
+    Tests that the login route correctly redirects the user to the
+    Mercado Libre authorization URL when API credentials are set.
     """
     monkeypatch.setenv("MELI_CLIENT_ID", "test-id")
     monkeypatch.setenv("MELI_CLIENT_SECRET", "test-secret")
@@ -169,7 +190,8 @@ def test_login_route_with_credentials(client, monkeypatch):
 
 def test_login_route_no_credentials(client, monkeypatch):
     """
-    Tests the login route behavior when credentials are not set.
+    Tests that the login route displays an error message on the home page
+    when the required API credentials are not set in the environment.
     """
     monkeypatch.delenv("MELI_CLIENT_ID", raising=False)
     monkeypatch.delenv("MELI_CLIENT_SECRET", raising=False)
@@ -181,7 +203,9 @@ def test_login_route_no_credentials(client, monkeypatch):
 
 def test_callback_route_success(client, requests_mock):
     """
-    Tests the /callback route with a successful token exchange.
+    Tests the /callback route with a successful token exchange. It verifies
+    that the access and refresh tokens are correctly stored in the session
+    and the user is redirected to the products page.
     """
     token_url = "https://api.mercadolibre.com/oauth/token"
     requests_mock.post(token_url, json={
@@ -200,7 +224,8 @@ def test_callback_route_success(client, requests_mock):
 
 def test_callback_route_no_code(client):
     """
-    Tests the /callback route when the authorization code is missing.
+    Tests the /callback route's behavior when the 'code' URL parameter is
+    missing, ensuring it flashes an appropriate error message.
     """
     response = client.get('/callback', follow_redirects=True)
     assert response.status_code == 200
@@ -208,7 +233,8 @@ def test_callback_route_no_code(client):
 
 def test_callback_route_token_exchange_error(client, requests_mock):
     """
-    Tests the /callback route when the token exchange fails.
+    Tests the /callback route when the token exchange with the API fails.
+    It should display a descriptive error message to the user.
     """
     token_url = "https://api.mercadolibre.com/oauth/token"
     requests_mock.post(token_url, status_code=400, json={"message": "Invalid code"})
