@@ -1,19 +1,23 @@
-import pytest
-import requests
 import time
+
+import pytest
 from flask import session, url_for
+from flask.testing import FlaskClient
+from requests_mock import Mocker
+
 from app import app, get_access_token, search_eco_products
 
-@pytest.fixture
-def client():
-    """A test client for the Flask application.
 
-    This fixture sets up the application for testing by enabling the 'TESTING'
-    flag, setting a test-specific secret key, and providing a test client to
-    make requests to the application's endpoints.
+@pytest.fixture
+def client() -> FlaskClient:
+    """Provides a test client for the Flask application.
+
+    This fixture configures the application for testing by enabling the
+    'TESTING' flag and setting a test-specific secret key. It yields a
+    test client instance to make requests to the application's endpoints.
 
     Yields:
-        FlaskClient: A test client instance for the application.
+        A test client instance for the Flask application.
     """
     app.config['TESTING'] = True
     app.config['SECRET_KEY'] = 'test-secret-key'
@@ -24,12 +28,16 @@ def client():
         with app.app_context():
             yield client
 
-def test_get_access_token_refresh_failure_preserves_session_data(client, requests_mock):
-    """
-    Tests that a failed token refresh only clears authentication session
-    variables, preserving other session data. This ensures that a user's
-    unrelated session information (e.g., a shopping cart) is not lost during
-    a failed re-authentication attempt.
+def test_get_access_token_refresh_failure_preserves_session_data(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests that a failed token refresh preserves other session data.
+
+    Verifies that if the API call to refresh a token fails, only the
+    authentication-related keys are removed from the session, while other
+    data (e.g., 'cart_items') remains untouched.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
     """
     token_url = "https://api.mercadolibre.com/oauth/token"
     requests_mock.post(token_url, status_code=400, json={"error": "invalid_grant"})
@@ -51,12 +59,16 @@ def test_get_access_token_refresh_failure_preserves_session_data(client, request
         assert 'expires_at' not in sess
 
 
-def test_get_access_token_refresh_missing_token_in_response(client, requests_mock):
-    """
-    Tests that a successful (200 OK) but invalid token refresh response
-    (e.g., missing 'access_token') is handled gracefully. The function should
-    not raise an exception and should clear the expired authentication data
-    from the session.
+def test_get_access_token_refresh_missing_token_in_response(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests graceful handling of a malformed token refresh response.
+
+    Ensures that if the API returns a 200 OK but the JSON response is
+    missing the 'access_token', the function handles it without errors and
+    clears the expired authentication data from the session.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
     """
     token_url = "https://api.mercadolibre.com/oauth/token"
     # Simulate a 200 OK response that is missing the access_token field.
@@ -75,10 +87,14 @@ def test_get_access_token_refresh_missing_token_in_response(client, requests_moc
         assert 'refresh_token' not in session
         assert 'expires_at' not in session
 
-def test_get_access_token_valid_in_session(client):
-    """
-    Tests that a valid, non-expired token is correctly retrieved from the session
-    without needing to make an external API call.
+def test_get_access_token_valid_in_session(client: FlaskClient) -> None:
+    """Tests that a valid token in the session is returned correctly.
+
+    Verifies that `get_access_token` retrieves a non-expired token directly
+    from the session without making an unnecessary external API call.
+
+    Args:
+        client: The Flask test client.
     """
     with app.test_request_context():
         session['access_token'] = 'valid_token'
@@ -86,20 +102,28 @@ def test_get_access_token_valid_in_session(client):
         token = get_access_token()
         assert token == 'valid_token'
 
-def test_get_access_token_no_token_in_session(client):
-    """
-    Tests that get_access_token returns None when no token information is
-    present in the session, ensuring it doesn't error on a clean session.
+def test_get_access_token_no_token_in_session(client: FlaskClient) -> None:
+    """Tests that get_access_token returns None for a clean session.
+
+    Ensures that the function returns None and does not raise an error when
+    no token information is present in the session.
+
+    Args:
+        client: The Flask test client.
     """
     with app.test_request_context():
         # Session is empty by default in a new request context
         token = get_access_token()
         assert token is None
 
-def test_search_eco_products_success(requests_mock):
-    """
-    Tests a successful product search, ensuring that the function correctly
-    parses the JSON response from the Mercado Libre API and returns it.
+def test_search_eco_products_success(requests_mock: Mocker) -> None:
+    """Tests a successful product search against the Mercado Libre API.
+
+    Verifies that the `search_eco_products` function correctly calls the
+    API, parses the JSON response, and returns the expected data.
+
+    Args:
+        requests_mock: The mock for the requests library.
     """
     search_url = "https://api.mercadolibre.com/sites/MLA/search"
     mock_response = {"results": [{"id": "MLA123", "title": "Eco-Friendly Product"}]}
@@ -109,10 +133,14 @@ def test_search_eco_products_success(requests_mock):
     assert error is None
     assert results == mock_response
 
-def test_search_eco_products_api_error(requests_mock):
-    """
-    Tests the function's error handling when the Mercado Libre API call fails.
-    It should return None for the results and a descriptive error message.
+def test_search_eco_products_api_error(requests_mock: Mocker) -> None:
+    """Tests error handling for a failed product search API call.
+
+    Ensures that if the Mercado Libre API returns an error (e.g., 500),
+    the function returns None for the results and a descriptive error message.
+
+    Args:
+        requests_mock: The mock for the requests library.
     """
     search_url = "https://api.mercadolibre.com/sites/MLA/search"
     requests_mock.get(search_url, status_code=500, reason="Internal Server Error")
@@ -123,27 +151,41 @@ def test_search_eco_products_api_error(requests_mock):
 
 # --- Route Tests ---
 
-def test_home_route(client):
-    """
-    Tests that the home page ('/') loads correctly and returns a 200 OK status.
+def test_home_route(client: FlaskClient) -> None:
+    """Tests that the home page ('/') loads correctly.
+
+    Verifies that the route returns a 200 OK status and contains the
+    expected title, indicating the page has rendered successfully.
+
+    Args:
+        client: The Flask test client.
     """
     response = client.get('/')
     assert response.status_code == 200
     assert b"Eco-Friendly Dropshipping App" in response.data
 
-def test_products_route_unauthenticated(client):
-    """
-    Tests that the /products route correctly redirects to the login page
-    when the user is not authenticated.
+def test_products_route_unauthenticated(client: FlaskClient) -> None:
+    """Tests that the /products route redirects unauthenticated users.
+
+    Verifies that accessing the /products page without being logged in
+    results in a redirect (302) to the login page.
+
+    Args:
+        client: The Flask test client.
     """
     response = client.get('/products')
     assert response.status_code == 302
     assert response.location == url_for('login', _external=False)
 
-def test_products_route_authenticated_success(client, requests_mock):
-    """
-    Tests that the /products route displays products correctly when the user
-    is authenticated. It mocks the API call to return a sample product list.
+def test_products_route_authenticated_success(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests that the /products route displays products for authenticated users.
+
+    Mocks a valid session and a successful API response to verify that the
+    route renders the product list correctly with the expected data.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
     """
     search_url = "https://api.mercadolibre.com/sites/MLA/search"
     mock_response = {"results": [{"id": "MLA123", "title": "Green Bottle", "price": 150, "thumbnail": "http://example.com/img.jpg"}]}
@@ -158,10 +200,15 @@ def test_products_route_authenticated_success(client, requests_mock):
     assert b"Green Bottle" in response.data
     assert b"150" in response.data
 
-def test_products_route_api_error(client, requests_mock):
-    """
-    Tests that the /products route handles an API error gracefully by
-    displaying an error message to the user on the page.
+def test_products_route_api_error(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests that the /products route handles API errors gracefully.
+
+    Verifies that if the underlying API call fails, the page still renders
+    and displays a user-friendly error message.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
     """
     search_url = "https://api.mercadolibre.com/sites/MLA/search"
     requests_mock.get(search_url, status_code=500)
@@ -174,10 +221,15 @@ def test_products_route_api_error(client, requests_mock):
     assert response.status_code == 200
     assert b"There was an error searching for products" in response.data
 
-def test_login_route_with_credentials(client, monkeypatch):
-    """
-    Tests that the login route correctly redirects the user to the
-    Mercado Libre authorization URL when API credentials are set.
+def test_login_route_with_credentials(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests that the login route redirects correctly when credentials are set.
+
+    Uses monkeypatch to set the required environment variables and verifies
+    that the /login route redirects to the correct Mercado Libre auth URL.
+
+    Args:
+        client: The Flask test client.
+        monkeypatch: The pytest fixture for modifying the environment.
     """
     monkeypatch.setenv("MELI_CLIENT_ID", "test-id")
     monkeypatch.setenv("MELI_CLIENT_SECRET", "test-secret")
@@ -188,10 +240,15 @@ def test_login_route_with_credentials(client, monkeypatch):
     assert 'auth.mercadolibre.com' in response.location
     assert 'client_id=test-id' in response.location
 
-def test_login_route_no_credentials(client, monkeypatch):
-    """
-    Tests that the login route displays an error message on the home page
-    when the required API credentials are not set in the environment.
+def test_login_route_no_credentials(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests that the login route shows an error if credentials are missing.
+
+    Uses monkeypatch to delete environment variables and verifies that the
+    /login route renders the home page with a visible error message.
+
+    Args:
+        client: The Flask test client.
+        monkeypatch: The pytest fixture for modifying the environment.
     """
     monkeypatch.delenv("MELI_CLIENT_ID", raising=False)
     monkeypatch.delenv("MELI_CLIENT_SECRET", raising=False)
@@ -201,11 +258,16 @@ def test_login_route_no_credentials(client, monkeypatch):
     assert response.status_code == 200
     assert b"API credentials are not configured" in response.data
 
-def test_callback_route_success(client, requests_mock):
-    """
-    Tests the /callback route with a successful token exchange. It verifies
-    that the access and refresh tokens are correctly stored in the session
-    and the user is redirected to the products page.
+def test_callback_route_success(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests a successful OAuth2 callback and token exchange.
+
+    Mocks a successful response from the token exchange endpoint and verifies
+    that the access/refresh tokens are stored in the session and the user is
+    redirected to the products page.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
     """
     token_url = "https://api.mercadolibre.com/oauth/token"
     requests_mock.post(token_url, json={
@@ -222,19 +284,28 @@ def test_callback_route_success(client, requests_mock):
         assert sess['access_token'] == 'new_access_token'
         assert sess['refresh_token'] == 'new_refresh_token'
 
-def test_callback_route_no_code(client):
-    """
-    Tests the /callback route's behavior when the 'code' URL parameter is
-    missing, ensuring it flashes an appropriate error message.
+def test_callback_route_no_code(client: FlaskClient) -> None:
+    """Tests the callback route when the 'code' parameter is missing.
+
+    Verifies that if the callback is accessed without an authorization code,
+    it flashes an appropriate error message and redirects.
+
+    Args:
+        client: The Flask test client.
     """
     response = client.get('/callback', follow_redirects=True)
     assert response.status_code == 200
     assert b"Authorization code not received." in response.data
 
-def test_callback_route_token_exchange_error(client, requests_mock):
-    """
-    Tests the /callback route when the token exchange with the API fails.
-    It should display a descriptive error message to the user.
+def test_callback_route_token_exchange_error(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests the callback route when the token exchange API call fails.
+
+    Mocks a failure response from the token exchange endpoint and verifies
+    that a descriptive error message is flashed to the user.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
     """
     token_url = "https://api.mercadolibre.com/oauth/token"
     requests_mock.post(token_url, status_code=400, json={"message": "Invalid code"})
