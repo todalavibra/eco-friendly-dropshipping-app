@@ -71,21 +71,74 @@ def test_get_access_token_refresh_missing_token_in_response(client: FlaskClient,
         requests_mock: The mock for the requests library.
     """
     token_url = "https://api.mercadolibre.com/oauth/token"
-    # Simulate a 200 OK response that is missing the access_token field.
     requests_mock.post(token_url, status_code=200, json={"scope": "read"})
 
+    with client.session_transaction() as sess:
+        sess['refresh_token'] = 'valid_refresh_token'
+        sess['expires_at'] = time.time() - 3600
+
+    # This should fail the token refresh and redirect to login
+    response = client.get('/products')
+    assert response.status_code == 302
+    assert response.location == url_for('login')
+
+    # Verify that the session was cleared of auth data
+    with client.session_transaction() as sess:
+        assert 'access_token' not in sess
+        assert 'refresh_token' not in sess
+        assert 'expires_at' not in sess
+
+
+def test_get_access_token_refresh_success(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests a successful token refresh.
+
+    Verifies that an expired token is correctly refreshed using the refresh
+    token, and that the new access token and expiry time are stored in the
+    session.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
+    """
+    token_url = "https://api.mercadolibre.com/oauth/token"
+    requests_mock.post(token_url, json={
+        "access_token": "new_refreshed_token",
+        "refresh_token": "updated_refresh_token",
+        "expires_in": 3600
+    })
+    # Mock the subsequent search API call in the /products route
+    search_url = "https://api.mercadolibre.com/sites/MLA/search"
+    requests_mock.get(search_url, json={"results": []})
+
+    with client.session_transaction() as sess:
+        sess['refresh_token'] = 'old_refresh_token'
+        sess['expires_at'] = time.time() - 7200  # Expired
+
+    response = client.get('/products')
+    assert response.status_code == 200
+
+    with client.session_transaction() as sess:
+        assert sess['access_token'] == "new_refreshed_token"
+        assert sess['refresh_token'] == "updated_refresh_token"
+        assert 'expires_at' in sess and sess['expires_at'] > time.time()
+
+
+def test_get_access_token_no_refresh_token(client: FlaskClient) -> None:
+    """Tests that get_access_token returns None when no refresh token is available.
+
+    Ensures that the function returns None and does not attempt a refresh
+    if the session is missing a 'refresh_token'.
+
+    Args:
+        client: The Flask test client.
+    """
     with app.test_request_context():
-        session['refresh_token'] = 'valid_refresh_token'
-        session['expires_at'] = time.time() - 3600 # Expired
+        # Session has an expired access token but no refresh token
+        session['access_token'] = 'expired_token'
+        session['expires_at'] = time.time() - 3600
 
-        # This call should not raise a KeyError.
         token = get_access_token()
-
         assert token is None
-        # The session should be cleared of auth data.
-        assert 'access_token' not in session
-        assert 'refresh_token' not in session
-        assert 'expires_at' not in session
 
 def test_get_access_token_valid_in_session(client: FlaskClient) -> None:
     """Tests that a valid token in the session is returned correctly.
@@ -148,6 +201,27 @@ def test_search_eco_products_api_error(requests_mock: Mocker) -> None:
     results, error = search_eco_products("eco-friendly", "fake_token")
     assert results is None
     assert "Internal Server Error" in error
+
+
+def test_search_eco_products_invalid_query(client: FlaskClient) -> None:
+    """Tests that the search function handles invalid queries gracefully.
+
+    Verifies that the function returns an error when the query is empty or
+    None, without making an unnecessary API call.
+
+    Args:
+        client: The Flask test client.
+    """
+    with app.test_request_context():
+        # Test with an empty query
+        results, error = search_eco_products("", "fake_token")
+        assert results is None
+        assert error == "Search query cannot be empty."
+
+        # Test with a query containing only whitespace
+        results, error = search_eco_products("   ", "fake_token")
+        assert results is None
+        assert error == "Search query cannot be empty."
 
 # --- Route Tests ---
 
@@ -220,6 +294,50 @@ def test_products_route_api_error(client: FlaskClient, requests_mock: Mocker) ->
     response = client.get('/products')
     assert response.status_code == 200
     assert b"There was an error searching for products" in response.data
+
+
+def test_products_route_pagination(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests the pagination functionality on the /products route.
+
+    Verifies that the correct offset is sent to the API based on the 'page'
+    query parameter.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
+    """
+    search_url = "https://api.mercadolibre.com/sites/MLA/search"
+    requests_mock.get(search_url, json={"results": [], "paging": {"total": 50, "offset": 20, "limit": 10}})
+
+    with client.session_transaction() as sess:
+        sess['access_token'] = 'valid_token'
+        sess['expires_at'] = time.time() + 3600
+
+    response = client.get('/products?page=3')
+    assert response.status_code == 200
+    # Verify that the 'offset' parameter in the API call was correct (page 3 -> offset 20)
+    assert requests_mock.last_request.qs['offset'] == ['20']
+
+
+def test_products_route_default_query(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests that the /products route uses a default query.
+
+    Verifies that if no 'q' parameter is provided, the route defaults to
+    searching for "eco-friendly".
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
+    """
+    search_url = "https://api.mercadolibre.com/sites/MLA/search"
+    requests_mock.get(search_url, json={"results": []})
+
+    with client.session_transaction() as sess:
+        sess['access_token'] = 'valid_token'
+        sess['expires_at'] = time.time() + 3600
+
+    client.get('/products')
+    assert requests_mock.last_request.qs['q'] == ['eco-friendly']
 
 def test_login_route_with_credentials(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests that the login route redirects correctly when credentials are set.
@@ -297,36 +415,19 @@ def test_callback_route_no_code(client: FlaskClient) -> None:
     assert response.status_code == 200
     assert b"Authorization code not received." in response.data
 
-def test_callback_route_token_exchange_error(client: FlaskClient, requests_mock: Mocker) -> None:
-    """Tests the callback route when the token exchange API call fails.
+def test_callback_route_malformed_token_response(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests the callback route with a malformed token response from the API.
 
-    Mocks a failure response from the token exchange endpoint and verifies
-    that a descriptive error message is flashed to the user.
-
-    Args:
-        client: The Flask test client.
-        requests_mock: The mock for the requests library.
-    """
-    token_url = "https://api.mercadolibre.com/oauth/token"
-    requests_mock.post(token_url, status_code=400, json={"message": "Invalid code"})
-
-    response = client.get('/callback?code=bad-code', follow_redirects=True)
-    assert response.status_code == 200
-    assert b"Error during token exchange: Invalid code" in response.data
-
-def test_callback_route_token_exchange_error(client: FlaskClient, requests_mock: Mocker) -> None:
-    """Tests the callback route when the token exchange API call fails.
-
-    Mocks a failure response from the token exchange endpoint and verifies
-    that a descriptive error message is flashed to the user.
+    Verifies that if the API returns a 200 OK but the response is missing
+    the 'access_token', an error is flashed to the user.
 
     Args:
         client: The Flask test client.
         requests_mock: The mock for the requests library.
     """
     token_url = "https://api.mercadolibre.com/oauth/token"
-    requests_mock.post(token_url, status_code=400, json={"message": "Invalid code"})
+    requests_mock.post(token_url, status_code=200, json={"scope": "read"}) # Missing 'access_token'
 
-    response = client.get('/callback?code=bad-code', follow_redirects=True)
+    response = client.get('/callback?code=test-code', follow_redirects=True)
     assert response.status_code == 200
-    assert b"Error during token exchange: Invalid code" in response.data
+    assert b"Error during token exchange" in response.data
