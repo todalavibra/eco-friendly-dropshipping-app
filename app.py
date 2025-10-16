@@ -109,6 +109,9 @@ def search_eco_products(query: str, access_token: str, site_id: str = "MLA", sor
         and None on success, or (None, str) on failure, where the second
         element is an error message.
     """
+    if not query or not query.strip():
+        return None, "Search query cannot be empty."
+
     search_url = f"https://api.mercadolibre.com/sites/{site_id}/search"
     headers = {
         "Authorization": f"Bearer {access_token}"
@@ -247,6 +250,10 @@ def callback():
         response = requests.post(token_url, json=payload)
         response.raise_for_status()
         token_data = response.json()
+
+        if 'access_token' not in token_data or 'expires_in' not in token_data:
+            flash("Error during token exchange: Malformed response from API.", "danger")
+            return redirect(url_for('home'))
 
         session['access_token'] = token_data['access_token']
         session['refresh_token'] = token_data.get('refresh_token')
