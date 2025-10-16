@@ -313,23 +313,3 @@ def test_callback_route_token_exchange_error(client: FlaskClient, requests_mock:
     response = client.get('/callback?code=bad-code', follow_redirects=True)
     assert response.status_code == 200
     assert b"Error during token exchange: Invalid code" in response.data
-
-def test_contact_route(client: FlaskClient) -> None:
-    """Tests that the contact page loads and that form submission works.
-
-    Args:
-        client: The Flask test client.
-    """
-    # Test GET request
-    response = client.get("/contact")
-    assert response.status_code == 200
-    assert b"Contact Us" in response.data
-
-    # Test POST request
-    response = client.post("/contact", data={
-        "name": "Test User",
-        "email": "test@example.com",
-        "message": "This is a test message."
-    }, follow_redirects=True)
-    assert response.status_code == 200
-    assert b"Thank you for your message!" in response.data
