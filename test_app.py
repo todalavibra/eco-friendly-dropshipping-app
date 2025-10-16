@@ -313,3 +313,20 @@ def test_callback_route_token_exchange_error(client: FlaskClient, requests_mock:
     response = client.get('/callback?code=bad-code', follow_redirects=True)
     assert response.status_code == 200
     assert b"Error during token exchange: Invalid code" in response.data
+
+def test_callback_route_token_exchange_error(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests the callback route when the token exchange API call fails.
+
+    Mocks a failure response from the token exchange endpoint and verifies
+    that a descriptive error message is flashed to the user.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
+    """
+    token_url = "https://api.mercadolibre.com/oauth/token"
+    requests_mock.post(token_url, status_code=400, json={"message": "Invalid code"})
+
+    response = client.get('/callback?code=bad-code', follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Error during token exchange: Invalid code" in response.data
