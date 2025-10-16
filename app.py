@@ -92,7 +92,7 @@ def get_access_token() -> Optional[str]:
     return None
 
 
-def search_eco_products(query: str, access_token: str, site_id: str = "MLA") -> Tuple[Optional[Dict], Optional[str]]:
+def search_eco_products(query: str, access_token: str, site_id: str = "MLA", sort: str = "relevance", offset: int = 0, limit: int = 10, category: str = None) -> Tuple[Optional[Dict], Optional[str]]:
     """Searches for products on Mercado Libre using the provided query.
 
     Args:
@@ -100,6 +100,10 @@ def search_eco_products(query: str, access_token: str, site_id: str = "MLA") -> 
         access_token: The user's OAuth2 access token for API authentication.
         site_id: The Mercado Libre site ID to search within. Defaults to
             "MLA" (Argentina).
+        sort: The sorting criteria for the search results.
+        offset: The offset for pagination.
+        limit: The number of results to return per page.
+        category: The category to filter the search results by.
 
     Returns:
         A tuple containing the JSON response from the API as a dictionary
@@ -111,8 +115,14 @@ def search_eco_products(query: str, access_token: str, site_id: str = "MLA") -> 
         "Authorization": f"Bearer {access_token}"
     }
     params = {
-        "q": query
+        "q": query,
+        "sort": sort,
+        "offset": offset,
+        "limit": limit
     }
+    if category:
+        params['category'] = category
+
     try:
         response = requests.get(search_url, headers=headers, params=params)
         response.raise_for_status()
@@ -157,15 +167,29 @@ def products():
         return redirect(url_for('login'))
 
     query = request.args.get("q", "eco-friendly")
-    search_results, error = search_eco_products(query, access_token)
+    sort = request.args.get("sort", "relevance")
+    page = int(request.args.get("page", 1))
+    limit = 10
+    offset = (page - 1) * limit
+    category = request.args.get("category", None)
+
+    search_results, error = search_eco_products(query, access_token, sort=sort, offset=offset, limit=limit, category=category)
 
     if error:
         flash(f"There was an error searching for products: {error}", "danger")
         product_list = []
+        total_pages = 0
+        related_searches = []
+        available_filters = []
     else:
         product_list = search_results.get("results", []) if search_results else []
+        paging = search_results.get("paging", {})
+        total_results = paging.get("total", 0)
+        total_pages = (total_results + limit - 1) // limit
+        related_searches = search_results.get("related_results", [])
+        available_filters = search_results.get("filters", [])
 
-    return render_template('products.html', products=product_list, query=query)
+    return render_template('products.html', products=product_list, query=query, sort=sort, page=page, pages=total_pages, related_searches=related_searches, available_filters=available_filters, category=category)
 
 
 @app.route("/login")
@@ -250,6 +274,32 @@ def callback():
                 pass
         flash(f"Error during token exchange: {error_message}", "danger")
         return redirect(url_for('home'))
+
+
+@app.route("/contact", methods=["GET", "POST"])
+def contact():
+    """Renders the contact page and handles form submissions.
+
+    For GET requests, it displays the contact form. For POST requests,
+    it processes the submitted data (in a real application, this would
+    involve sending an email or saving the message to a database) and
+    then flashes a confirmation message.
+
+    Returns:
+        The rendered contact.html template, or a redirect to the same
+        page after form submission.
+    """
+    if request.method == "POST":
+        # In a real app, you would process the form data here, e.g., send an email.
+        name = request.form.get("name")
+        email = request.form.get("email")
+        message = request.form.get("message")
+        print(f"New contact message from {name} ({email}): {message}")
+
+        flash("Thank you for your message! We will get back to you shortly.", "success")
+        return redirect(url_for('contact'))
+
+    return render_template("contact.html")
 
 
 if __name__ == '__main__':
