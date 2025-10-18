@@ -14,12 +14,13 @@ from app import app, get_access_token, search_eco_products
 def client() -> FlaskClient:
     """Provides a test client for the Flask application.
 
-    This fixture configures the application for testing by enabling the
-    'TESTING' flag and setting a test-specific secret key. It yields a
-    test client instance to make requests to the application's endpoints.
+    This fixture configures the Flask app for testing by enabling the 'TESTING'
+    flag, setting a temporary secret key, and defining a server name for
+    consistent URL generation. It yields a test client, which allows for
+    making requests to the application's endpoints within a test context.
 
     Yields:
-        A test client instance for the Flask application.
+        A Flask test client instance.
     """
     app.config['TESTING'] = True
     app.config['SECRET_KEY'] = 'test-secret-key'
@@ -31,11 +32,13 @@ def client() -> FlaskClient:
             yield client
 
 def test_get_access_token_refresh_failure_preserves_session_data(client: FlaskClient, requests_mock: Mocker) -> None:
-    """Tests that a failed token refresh preserves other session data.
+    """Ensures a failed token refresh preserves other session data.
 
-    Verifies that if the API call to refresh a token fails, only the
-    authentication-related keys are removed from the session, while other
-    data (e.g., 'cart_items') remains untouched.
+    This test simulates a scenario where the token refresh API call returns
+    an error. It verifies that the session cleaning logic correctly removes
+    only the expired authentication keys (`access_token`, `refresh_token`,
+    `expires_at`) while preserving other unrelated session data, such as
+    items in a shopping cart.
 
     Args:
         client: The Flask test client.
@@ -62,11 +65,12 @@ def test_get_access_token_refresh_failure_preserves_session_data(client: FlaskCl
 
 
 def test_get_access_token_refresh_missing_token_in_response(client: FlaskClient, requests_mock: Mocker) -> None:
-    """Tests graceful handling of a malformed token refresh response.
+    """Tests handling of a malformed but successful token refresh response.
 
-    Ensures that if the API returns a 200 OK but the JSON response is
-    missing the 'access_token', the function handles it without errors and
-    clears the expired authentication data from the session.
+    This test covers the edge case where the token refresh API returns a 200
+    OK status but the JSON body is missing the expected 'access_token'. It
+    verifies that the application handles this gracefully by clearing the
+    invalid session data and redirecting the user to log in again.
 
     Args:
         client: The Flask test client.
@@ -92,11 +96,12 @@ def test_get_access_token_refresh_missing_token_in_response(client: FlaskClient,
 
 
 def test_get_access_token_refresh_success(client: FlaskClient, requests_mock: Mocker) -> None:
-    """Tests a successful token refresh.
+    """Tests a successful token refresh flow.
 
-    Verifies that an expired token is correctly refreshed using the refresh
-    token, and that the new access token and expiry time are stored in the
-    session.
+    This test simulates a scenario where a user's access token has expired.
+    It verifies that the application automatically uses the refresh token to
+    request a new access token from the API and correctly updates the session
+    with the new token, its expiry time, and the updated refresh token.
 
     Args:
         client: The Flask test client.
@@ -126,10 +131,11 @@ def test_get_access_token_refresh_success(client: FlaskClient, requests_mock: Mo
 
 
 def test_get_access_token_no_refresh_token(client: FlaskClient) -> None:
-    """Tests that get_access_token returns None when no refresh token is available.
+    """Tests `get_access_token` when the session lacks a refresh token.
 
-    Ensures that the function returns None and does not attempt a refresh
-    if the session is missing a 'refresh_token'.
+    This test ensures that if a user's access token is expired or missing,
+    but there is no corresponding refresh token in the session, the function
+    correctly returns `None` without attempting an API call.
 
     Args:
         client: The Flask test client.
@@ -143,10 +149,11 @@ def test_get_access_token_no_refresh_token(client: FlaskClient) -> None:
         assert token is None
 
 def test_get_access_token_valid_in_session(client: FlaskClient) -> None:
-    """Tests that a valid token in the session is returned correctly.
+    """Ensures `get_access_token` returns a valid token from the session.
 
-    Verifies that `get_access_token` retrieves a non-expired token directly
-    from the session without making an unnecessary external API call.
+    This test confirms that if a valid, non-expired access token exists in
+    the user's session, the `get_access_token` function returns it directly
+    without attempting an unnecessary and wasteful API call to refresh it.
 
     Args:
         client: The Flask test client.
@@ -158,10 +165,11 @@ def test_get_access_token_valid_in_session(client: FlaskClient) -> None:
         assert token == 'valid_token'
 
 def test_get_access_token_no_token_in_session(client: FlaskClient) -> None:
-    """Tests that get_access_token returns None for a clean session.
+    """Tests `get_access_token` for a session with no token information.
 
-    Ensures that the function returns None and does not raise an error when
-    no token information is present in the session.
+    This test verifies that when a user has a completely empty session (no
+    access token, no refresh token), the `get_access_token` function
+    correctly returns `None` without raising any errors.
 
     Args:
         client: The Flask test client.
@@ -174,8 +182,10 @@ def test_get_access_token_no_token_in_session(client: FlaskClient) -> None:
 def test_search_eco_products_success(requests_mock: Mocker) -> None:
     """Tests a successful product search against the Mercado Libre API.
 
-    Verifies that the `search_eco_products` function correctly calls the
-    API, parses the JSON response, and returns the expected data.
+    This test mocks a successful API response for a product search and
+    verifies that the `search_eco_products` function correctly calls the API,
+    parses the JSON response, and returns the expected data tuple (results,
+    None).
 
     Args:
         requests_mock: The mock for the requests library.
@@ -191,8 +201,10 @@ def test_search_eco_products_success(requests_mock: Mocker) -> None:
 def test_search_eco_products_api_error(requests_mock: Mocker) -> None:
     """Tests error handling for a failed product search API call.
 
-    Ensures that if the Mercado Libre API returns an error (e.g., 500),
-    the function returns None for the results and a descriptive error message.
+    This test simulates a scenario where the Mercado Libre search API
+    returns an HTTP error (e.g., 500 Internal Server Error). It verifies
+    that the `search_eco_products` function catches the exception and returns
+    a `(None, str)` tuple containing a descriptive error message.
 
     Args:
         requests_mock: The mock for the requests library.
@@ -206,10 +218,12 @@ def test_search_eco_products_api_error(requests_mock: Mocker) -> None:
 
 
 def test_search_eco_products_invalid_query(client: FlaskClient) -> None:
-    """Tests that the search function handles invalid queries gracefully.
+    """Ensures the search function handles invalid queries gracefully.
 
-    Verifies that the function returns an error when the query is empty or
-    None, without making an unnecessary API call.
+    This test verifies that the `search_eco_products` function returns an
+    error message when the provided query is empty or contains only
+    whitespace. It confirms that no unnecessary API call is made in these
+    cases.
 
     Args:
         client: The Flask test client.
@@ -230,8 +244,9 @@ def test_search_eco_products_invalid_query(client: FlaskClient) -> None:
 def test_home_route(client: FlaskClient) -> None:
     """Tests that the home page ('/') loads correctly.
 
-    Verifies that the route returns a 200 OK status and contains the
-    expected title, indicating the page has rendered successfully.
+    This test makes a GET request to the root URL ('/') and asserts that it
+    receives a 200 OK status code. It also checks for the presence of a key
+    phrase in the response body to ensure the correct template was rendered.
 
     Args:
         client: The Flask test client.
@@ -241,10 +256,11 @@ def test_home_route(client: FlaskClient) -> None:
     assert b"Eco-Friendly Dropshipping App" in response.data
 
 def test_products_route_unauthenticated(client: FlaskClient) -> None:
-    """Tests that the /products route redirects unauthenticated users.
+    """Ensures the /products route redirects unauthenticated users.
 
-    Verifies that accessing the /products page without being logged in
-    results in a redirect (302) to the login page.
+    This test verifies that any attempt to access the protected /products
+    endpoint without a valid session results in a redirect (status code 302)
+    to the login page, preventing unauthorized access.
 
     Args:
         client: The Flask test client.
@@ -254,10 +270,12 @@ def test_products_route_unauthenticated(client: FlaskClient) -> None:
     assert response.location == url_for('login', _external=False)
 
 def test_products_route_authenticated_success(client: FlaskClient, requests_mock: Mocker) -> None:
-    """Tests that the /products route displays products for authenticated users.
+    """Tests successful product display for an authenticated user.
 
-    Mocks a valid session and a successful API response to verify that the
-    route renders the product list correctly with the expected data.
+    This test simulates a logged-in user by creating a valid session with an
+    access token. It then mocks a successful API response from the search
+    endpoint and verifies that the /products page renders correctly,
+    displaying the product information from the API.
 
     Args:
         client: The Flask test client.
@@ -277,10 +295,12 @@ def test_products_route_authenticated_success(client: FlaskClient, requests_mock
     assert b"150" in response.data
 
 def test_products_route_api_error(client: FlaskClient, requests_mock: Mocker) -> None:
-    """Tests that the /products route handles API errors gracefully.
+    """Ensures the /products route handles API errors gracefully.
 
-    Verifies that if the underlying API call fails, the page still renders
-    and displays a user-friendly error message.
+    This test simulates a scenario where the user is authenticated, but the
+    call to the Mercado Libre search API fails. It verifies that the page
+    still renders successfully (200 OK) and displays a user-friendly error
+    message in the response body.
 
     Args:
         client: The Flask test client.
@@ -301,8 +321,9 @@ def test_products_route_api_error(client: FlaskClient, requests_mock: Mocker) ->
 def test_products_route_pagination(client: FlaskClient, requests_mock: Mocker) -> None:
     """Tests the pagination functionality on the /products route.
 
-    Verifies that the correct offset is sent to the API based on the 'page'
-    query parameter.
+    This test verifies that the 'page' query parameter is correctly
+    interpreted and used to calculate the 'offset' for the API request,
+    enabling users to navigate through pages of search results.
 
     Args:
         client: The Flask test client.
@@ -322,10 +343,11 @@ def test_products_route_pagination(client: FlaskClient, requests_mock: Mocker) -
 
 
 def test_products_route_default_query(client: FlaskClient, requests_mock: Mocker) -> None:
-    """Tests that the /products route uses a default query.
+    """Ensures the /products route uses a default query.
 
-    Verifies that if no 'q' parameter is provided, the route defaults to
-    searching for "eco-friendly".
+    This test verifies that when an authenticated user accesses the /products
+    page without specifying a search query 'q' in the URL, the application
+    defaults to searching for "eco-friendly" as a fallback.
 
     Args:
         client: The Flask test client.
@@ -342,10 +364,12 @@ def test_products_route_default_query(client: FlaskClient, requests_mock: Mocker
     assert requests_mock.last_request.qs['q'] == ['eco-friendly']
 
 def test_login_route_with_credentials(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tests that the login route redirects correctly when credentials are set.
+    """Tests the login route redirect when credentials are set.
 
-    Uses monkeypatch to set the required environment variables and verifies
-    that the /login route redirects to the correct Mercado Libre auth URL.
+    This test uses `monkeypatch` to set the necessary environment variables
+    for the API credentials. It then verifies that accessing the /login route
+    correctly builds the Mercado Libre authorization URL and returns a 302
+    redirect to it.
 
     Args:
         client: The Flask test client.
@@ -361,10 +385,12 @@ def test_login_route_with_credentials(client: FlaskClient, monkeypatch: pytest.M
     assert 'client_id=test-id' in response.location
 
 def test_login_route_no_credentials(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tests that the login route shows an error if credentials are missing.
+    """Ensures the login route handles missing API credentials.
 
-    Uses monkeypatch to delete environment variables and verifies that the
-    /login route renders the home page with a visible error message.
+    This test uses `monkeypatch` to simulate an environment where the
+    Mercado Libre API credentials have not been set. It verifies that
+    accessing the /login route does not cause a crash, but instead flashes
+    a user-friendly error message on the home page.
 
     Args:
         client: The Flask test client.
@@ -381,9 +407,11 @@ def test_login_route_no_credentials(client: FlaskClient, monkeypatch: pytest.Mon
 def test_callback_route_success(client: FlaskClient, requests_mock: Mocker) -> None:
     """Tests a successful OAuth2 callback and token exchange.
 
-    Mocks a successful response from the token exchange endpoint and verifies
-    that the access/refresh tokens are stored in the session and the user is
-    redirected to the products page.
+    This test simulates a successful authorization by the user, where Mercado
+    Libre redirects back to the /callback endpoint with a valid authorization
+    code. It mocks a successful response from the token exchange API and
+    verifies that the new tokens are correctly stored in the session, and the
+    user is redirected to the products page.
 
     Args:
         client: The Flask test client.
@@ -405,10 +433,12 @@ def test_callback_route_success(client: FlaskClient, requests_mock: Mocker) -> N
         assert sess['refresh_token'] == 'new_refresh_token'
 
 def test_callback_route_no_code(client: FlaskClient) -> None:
-    """Tests the callback route when the 'code' parameter is missing.
+    """Ensures the callback route handles a missing authorization code.
 
-    Verifies that if the callback is accessed without an authorization code,
-    it flashes an appropriate error message and redirects.
+    This test verifies that if a user is redirected to the /callback
+    endpoint without the required 'code' URL parameter, the application
+    flashes an appropriate error message and redirects the user to the home
+    page.
 
     Args:
         client: The Flask test client.
@@ -418,10 +448,12 @@ def test_callback_route_no_code(client: FlaskClient) -> None:
     assert b"Authorization code not received." in response.data
 
 def test_callback_route_malformed_token_response(client: FlaskClient, requests_mock: Mocker) -> None:
-    """Tests the callback route with a malformed token response from the API.
+    """Tests the callback route with a malformed token response.
 
-    Verifies that if the API returns a 200 OK but the response is missing
-    the 'access_token', an error is flashed to the user.
+    This test handles the edge case where the token exchange API returns a
+    200 OK status, but the JSON response is missing the required
+    'access_token' field. It verifies that the application correctly
+    identifies this as an error, flashes a message, and redirects home.
 
     Args:
         client: The Flask test client.
@@ -436,10 +468,12 @@ def test_callback_route_malformed_token_response(client: FlaskClient, requests_m
 
 
 def test_callback_route_api_error_with_json_body(client: FlaskClient, requests_mock: Mocker) -> None:
-    """Tests the callback route when the API returns an error with a JSON body.
+    """Tests the callback route when the API returns a JSON error.
 
-    Verifies that if the token exchange fails with a JSON error message,
-    that message is correctly extracted and displayed to the user.
+    This test simulates a scenario where the token exchange API returns a
+    structured JSON error (e.g., a 400 Bad Request). It verifies that the
+    application correctly parses the JSON, extracts the 'message' field, and
+    displays it to the user as a flashed message.
 
     Args:
         client: The Flask test client.
@@ -458,15 +492,17 @@ def test_callback_route_api_error_with_json_body(client: FlaskClient, requests_m
 
 
 def test_main_execution_with_ngrok_and_warning(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tests the main execution block with ngrok enabled and missing credentials.
+    """Tests the main execution block with ngrok and a credential warning.
 
-    This test verifies multiple startup conditions at once:
-    1.  That `run_with_ngrok` is called if `USE_NGROK` is set.
-    2.  That a warning is printed if API credentials are not set.
-    3.  That `app.run()` is called with the correct parameters.
+    This test verifies multiple startup conditions simultaneously:
+    1.  It ensures that `run_with_ngrok` is called when the `USE_NGROK`
+        environment variable is set.
+    2.  It checks that a warning is printed to the console if the Mercado
+        Libre API credentials are not set in the environment.
+    3.  It confirms that `app.run()` is called with the correct host and port.
 
-    It uses `runpy` to execute the app's top-level script and patches
-    `flask.Flask.run` to prevent the server from actually starting.
+    This is achieved by using `runpy` to execute the app's script as `__main__`
+    and patching the `run`, `run_with_ngrok`, and `print` functions.
 
     Args:
         monkeypatch: The pytest fixture for modifying the environment.
@@ -501,8 +537,10 @@ def test_main_execution_with_ngrok_and_warning(monkeypatch: pytest.MonkeyPatch) 
 def test_callback_route_api_error_with_non_json_body(client: FlaskClient, requests_mock: Mocker) -> None:
     """Tests the callback route when the API returns a non-JSON error.
 
-    Verifies that if the token exchange fails and the response body is not
-    valid JSON, the error handler gracefully uses the generic error message.
+    This test ensures that if the token exchange API returns an error with a
+    non-JSON response body (e.g., plain text or HTML), the application
+    handles it gracefully by displaying a generic error message to the user
+    instead of crashing due to a JSON decoding error.
 
     Args:
         client: The Flask test client.
