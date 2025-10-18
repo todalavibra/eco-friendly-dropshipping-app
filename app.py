@@ -30,15 +30,20 @@ if os.environ.get("USE_NGROK"):
 # --- Helper Functions ---
 
 def get_access_token() -> Optional[str]:
-    """Retrieves the access token from the session, refreshing it if necessary.
+    """Retrieves the access token from the session, refreshing if needed.
 
-    Checks for a valid, non-expired access token in the session. If the token
-    is expired or missing, it attempts to use the refresh token to obtain a
-    new one from the Mercado Libre API.
+    This function checks for a valid, non-expired access token in the Flask
+    session. If the token exists and is fresh, it's returned immediately. If
+    the token is expired or missing, it attempts to use the stored refresh
+    token to obtain a new access token from the Mercado Libre API.
+
+    If the refresh is successful, it updates the session with the new token
+    and its expiry time. If the refresh fails, it clears the session of all
+    authentication data.
 
     Returns:
-        A valid access token string, or None if the token cannot be
-        retrieved or refreshed.
+        A valid access token as a string if available or successfully
+        refreshed, otherwise None.
     """
     if ('access_token' in session and 'expires_at' in session
             and time.time() < session['expires_at']):
@@ -95,19 +100,25 @@ def get_access_token() -> Optional[str]:
 def search_eco_products(query: str, access_token: str, site_id: str = "MLA", sort: str = "relevance", offset: int = 0, limit: int = 10) -> Tuple[Optional[Dict], Optional[str]]:
     """Searches for products on Mercado Libre using the provided query.
 
+    This function constructs and sends a GET request to the Mercado Libre
+    search API. It includes the necessary authorization header and query
+    parameters for filtering, sorting, and pagination.
+
     Args:
         query: The search term to look for.
         access_token: The user's OAuth2 access token for API authentication.
         site_id: The Mercado Libre site ID to search within. Defaults to
             "MLA" (Argentina).
-        sort: The sorting criteria for the search results.
-        offset: The offset for pagination.
+        sort: The sorting criteria for the search results (e.g., 'relevance').
+        offset: The starting index for pagination.
         limit: The number of results to return per page.
 
     Returns:
-        A tuple containing the JSON response from the API as a dictionary
-        and None on success, or (None, str) on failure, where the second
-        element is an error message.
+        A tuple containing two elements:
+        - A dictionary with the JSON response from the API on success.
+        - An error message string on failure.
+        If the call is successful, the error message will be None, and vice
+        versa.
     """
     if not query or not query.strip():
         return None, "Search query cannot be empty."
@@ -147,7 +158,7 @@ def home() -> str:
 
 
 @app.route("/products")
-def products():
+def products() -> str:
     """Displays a list of products based on a search query.
 
     Requires the user to be authenticated. It retrieves the user's access
@@ -155,10 +166,12 @@ def products():
     query is passed via the 'q' URL parameter; if absent, it defaults to
     "eco-friendly". The results are rendered on the products page.
 
+    The view supports pagination via the 'page' URL parameter and sorting via
+    the 'sort' parameter.
+
     Returns:
-        A redirect to the login page if the user is not authenticated, or
-        the rendered HTML of the 'products.html' template with the list
-        of products.
+        A redirect to the login page if the user is not authenticated, or the
+        rendered HTML of the 'products.html' template with the product list.
     """
     access_token = get_access_token()
     if not access_token:
@@ -187,17 +200,17 @@ def products():
 
 
 @app.route("/login")
-def login():
-    """Initiates the OAuth2 login process by redirecting to Mercado Libre.
+def login() -> str:
+    """Initiates the OAuth2 login process.
 
-    Constructs the authorization URL with the app's client ID and redirect
-    URI and redirects the user. If the necessary API credentials are not
-    configured in the environment, it flashes an error and renders the
-    home page instead.
+    Constructs the Mercado Libre authorization URL and redirects the user.
+    If the necessary API credentials (client ID, secret, redirect URI) are
+    not configured in the environment, it flashes an error message and
+    renders the home page instead of attempting the redirect.
 
     Returns:
-        A redirect to the Mercado Libre authorization URL, or the rendered
-        home page if credentials are not configured.
+        A Flask redirect response to the Mercado Libre authorization URL or
+        the rendered HTML of the home page if credentials are missing.
     """
     # Read credentials at time of use
     client_id = os.environ.get("MELI_CLIENT_ID")
@@ -214,18 +227,21 @@ def login():
 
 
 @app.route("/callback")
-def callback():
+def callback() -> str:
     """Handles the OAuth2 callback from Mercado Libre.
 
-    This route is called by Mercado Libre after a user authorizes the
-    application. It receives an authorization code that it exchanges for an
-    access token and a refresh token. These tokens are then stored in the
-    user's session.
+    This route is triggered after a user authorizes the application on the
+    Mercado Libre platform. It receives an authorization 'code' in the URL
+    parameters, which it then exchanges for an access token and a refresh
+    token by making a POST request to the Mercado Libre token endpoint.
+
+    On success, the tokens are stored in the user's session, and the user
+    is redirected to the main products page. On failure (e.g., no code,
+    API error), it flashes an error message and redirects to the home page.
 
     Returns:
-        A redirect to the products page on successful authentication, or a
-        redirect to the home page if an error occurs during the token
-        exchange.
+        A Flask redirect response to either the products page (on success) or
+        the home page (on failure).
     """
     code = request.args.get("code")
     if not code:
