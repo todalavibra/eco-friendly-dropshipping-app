@@ -1,4 +1,6 @@
 import time
+import runpy
+from unittest.mock import patch
 
 import pytest
 from flask import session, url_for
@@ -431,3 +433,88 @@ def test_callback_route_malformed_token_response(client: FlaskClient, requests_m
     response = client.get('/callback?code=test-code', follow_redirects=True)
     assert response.status_code == 200
     assert b"Error during token exchange" in response.data
+
+
+def test_callback_route_api_error_with_json_body(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests the callback route when the API returns an error with a JSON body.
+
+    Verifies that if the token exchange fails with a JSON error message,
+    that message is correctly extracted and displayed to the user.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
+    """
+    token_url = "https://api.mercadolibre.com/oauth/token"
+    requests_mock.post(
+        token_url,
+        status_code=400,
+        json={"message": "Invalid authorization code."}
+    )
+
+    response = client.get('/callback?code=invalid-code', follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Error during token exchange: Invalid authorization code." in response.data
+
+
+def test_main_execution_with_ngrok_and_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests the main execution block with ngrok enabled and missing credentials.
+
+    This test verifies multiple startup conditions at once:
+    1.  That `run_with_ngrok` is called if `USE_NGROK` is set.
+    2.  That a warning is printed if API credentials are not set.
+    3.  That `app.run()` is called with the correct parameters.
+
+    It uses `runpy` to execute the app's top-level script and patches
+    `flask.Flask.run` to prevent the server from actually starting.
+
+    Args:
+        monkeypatch: The pytest fixture for modifying the environment.
+    """
+    # Set up conditions for the test
+    monkeypatch.setenv("USE_NGROK", "true")
+    monkeypatch.delenv("MELI_CLIENT_ID", raising=False)  # Trigger the warning
+
+    # Patch the low-level Flask run method, the ngrok wrapper, and print
+    with patch('flask.Flask.run') as mock_flask_run, \
+         patch('flask_ngrok.run_with_ngrok') as mock_run_with_ngrok, \
+         patch('builtins.print') as mock_print:
+
+        # Execute the app script as if it were the main entry point
+        runpy.run_module('app', run_name='__main__')
+
+        # Assert that the startup logic behaved as expected
+        mock_run_with_ngrok.assert_called_once()
+        mock_flask_run.assert_called_once_with(host='0.0.0.0', port=5000)
+
+        # Check that the warning for missing credentials was printed
+        warning_message_found = any(
+            "WARNING: Mercado Libre API credentials" in call.args[0]
+            for call in mock_print.call_args_list
+        )
+        assert warning_message_found, "The warning for missing credentials was not printed."
+
+    # Clean up environment variables
+    monkeypatch.delenv("USE_NGROK")
+
+
+def test_callback_route_api_error_with_non_json_body(client: FlaskClient, requests_mock: Mocker) -> None:
+    """Tests the callback route when the API returns a non-JSON error.
+
+    Verifies that if the token exchange fails and the response body is not
+    valid JSON, the error handler gracefully uses the generic error message.
+
+    Args:
+        client: The Flask test client.
+        requests_mock: The mock for the requests library.
+    """
+    token_url = "https://api.mercadolibre.com/oauth/token"
+    requests_mock.post(
+        token_url,
+        status_code=500,
+        text="Internal Server Error"
+    )
+
+    response = client.get('/callback?code=any-code', follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Error during token exchange: 500 Server Error" in response.data
